@@ -1,45 +1,130 @@
-import "reflect-metadata";
+import { EachMessagePayload } from "kafkajs";
+import {
+  KAFKA_CONSUMER_TOPIC,
+  KAFKA_REPLY_HANDLER,
+} from "../decorators/kafka-consumer.decorator";
+import { kafkaRequestReply } from "../kafka.request-reply";
+import { KafkaReplyEnvelope } from "../kafka.types";
 
-import { KAFKA_CONSUMER } from "../decorators/kafka-consumer.decorator";
+type HandlerFn = (payload: EachMessagePayload) => Promise<unknown>;
 
-interface ConsumerMetadata {
-  topic: string;
-  handler: Function;
+interface RegisteredHandler {
+  fn: HandlerFn;
+  isReplyHandler: boolean;
 }
 
 class KafkaConsumerRegistry {
-  private consumers: ConsumerMetadata[] = [];
+  private handlers = new Map<string, RegisteredHandler>();
 
-  register(instance: any) {
-    const prototype = Object.getPrototypeOf(instance);
+  /**
+   * Scans a class instance for methods decorated with @KafkaConsumer or
+   * @KafkaReplyConsumer and registers them.
+   */
+  register(instance: object): void {
+    const proto = Object.getPrototypeOf(instance);
 
-    const methods = Object.getOwnPropertyNames(prototype);
+    for (const key of Object.getOwnPropertyNames(proto)) {
+      const method = (proto as Record<string, unknown>)[key];
+      if (typeof method !== "function") continue;
 
-    for (const method of methods) {
-      const handler = instance[method];
+      const topic: string | undefined = Reflect.getMetadata(
+        KAFKA_CONSUMER_TOPIC,
+        method,
+      );
+      if (!topic) continue;
 
-      const topic = Reflect.getMetadata(KAFKA_CONSUMER, handler);
+      const isReplyHandler: boolean =
+        Reflect.getMetadata(KAFKA_REPLY_HANDLER, method) ?? false;
 
-      if (!topic) {
-        continue;
-      }
+      const bound = (method as HandlerFn).bind(instance);
+      this.handlers.set(topic, { fn: bound, isReplyHandler });
 
-      this.consumers.push({
-        topic,
-        handler: handler.bind(instance),
-      });
-
-      console.log(`Registered Kafka Consumer: ${topic}`);
+      console.log(
+        `[KafkaRegistry] Registered ${isReplyHandler ? "reply" : "request"} handler for topic: ${topic}`,
+      );
     }
   }
 
-  async execute(topic: string, payload: any) {
-    const consumers = this.consumers.filter(
-      (consumer) => consumer.topic === topic,
-    );
+  /**
+   * Dispatches an incoming Kafka message to the correct handler.
+   *
+   * - Reply topics: extract correlationId from headers and resolve the pending Promise.
+   * - Request topics: call the handler and, if a replyTopic header is present,
+   *   send the result back automatically.
+   */
+  async execute(topic: string, payload: EachMessagePayload): Promise<void> {
+    const entry = this.handlers.get(topic);
 
-    for (const consumer of consumers) {
-      await consumer.handler(payload);
+    if (!entry) {
+      console.warn(`[KafkaRegistry] No handler registered for topic: ${topic}`);
+      return;
+    }
+
+    const { fn, isReplyHandler } = entry;
+    const headers = payload.message.headers ?? {};
+
+    // ── Reply path ──────────────────────────────────────────────────────────
+    if (isReplyHandler) {
+      const correlationId = headers["correlationId"]?.toString();
+      if (!correlationId) {
+        console.warn(
+          `[KafkaRegistry] Reply on ${topic} is missing correlationId header`,
+        );
+        return;
+      }
+
+      const raw = payload.message.value?.toString();
+      if (!raw) return;
+
+      const envelope = JSON.parse(raw) as KafkaReplyEnvelope;
+
+      if (envelope.error) {
+        kafkaRequestReply.rejectReply(correlationId, new Error(envelope.error));
+      } else {
+        kafkaRequestReply.resolveReply(correlationId, envelope.data);
+      }
+      return;
+    }
+
+    // ── Request path ─────────────────────────────────────────────────────────
+    const replyTopic = headers["replyTopic"]?.toString();
+    const correlationId = headers["correlationId"]?.toString();
+
+    try {
+      const result = await fn(payload);
+
+      // Auto-reply when the sender attached routing headers
+      if (replyTopic && correlationId) {
+        const { kafkaProducer } = await import("../kafka.producer");
+        await kafkaProducer.sendRaw({
+          topic: replyTopic,
+          messages: [
+            {
+              value: JSON.stringify({ data: result } satisfies KafkaReplyEnvelope),
+              headers: { correlationId },
+            },
+          ],
+        });
+      }
+    } catch (error) {
+      console.error(`[KafkaRegistry] Handler error on topic ${topic}:`, error);
+
+      // Propagate the error back to the caller if we have routing info
+      if (replyTopic && correlationId) {
+        const { kafkaProducer } = await import("../kafka.producer");
+        await kafkaProducer.sendRaw({
+          topic: replyTopic,
+          messages: [
+            {
+              value: JSON.stringify({
+                data: null,
+                error: error instanceof Error ? error.message : String(error),
+              } satisfies KafkaReplyEnvelope),
+              headers: { correlationId },
+            },
+          ],
+        });
+      }
     }
   }
 }

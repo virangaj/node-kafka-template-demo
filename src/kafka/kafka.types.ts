@@ -1,14 +1,14 @@
-export interface KafkaMessage<T> {
+export interface PendingRequest {
+  resolve: (value: any) => void;
+  reject: (reason?: any) => void;
+  timeout: ReturnType<typeof setTimeout>;
+}
+
+export interface KafkaMessageEnvelope<T = unknown> {
   data: T;
 }
 
-export interface RequestReplyHeaders {
-  correlationId: string;
-  replyTopic: string;
-}
-
-export interface PendingRequest {
-  resolve: Function;
-  reject: Function;
-  timeout: NodeJS.Timeout;
+export interface KafkaReplyEnvelope<T = unknown> {
+  data: T;
+  error?: string;
 }

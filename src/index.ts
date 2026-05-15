@@ -1,10 +1,10 @@
-import { kafkaConsumerManager } from "./kafka/kafka.consumer";
-
+// Your current index.ts
 import app from "./app";
 import {
   KAFKA_REPLY_TOPICS_ARRAY,
   KAFKA_REQUEST_TOPICS_ARRAY,
 } from "./kafka/kafka.constants";
+import { kafkaConsumerManager } from "./kafka/kafka.consumer";
 import { kafkaProducer } from "./kafka/kafka.producer";
 import { registerKafkaConsumers } from "./kafka/register-consumers";
 
@@ -16,7 +16,6 @@ async function bootstrap() {
 
   await kafkaConsumerManager.connect();
 
-  // Register consumers for all topics
   await Promise.all([
     ...KAFKA_REQUEST_TOPICS_ARRAY.map((topic) =>
       kafkaConsumerManager.subscribe(topic),

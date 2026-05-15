@@ -1,9 +1,6 @@
 import { Consumer, EachMessagePayload } from "kafkajs";
-
 import { kafka } from "./kafka";
-
 import { KAFKA_GROUP_ID } from "./kafka.constants";
-
 import { kafkaConsumerRegistry } from "./registry/kafka-consumer.registry";
 
 export class KafkaConsumerManager {
@@ -17,7 +14,6 @@ export class KafkaConsumerManager {
 
   async connect() {
     await this.consumer.connect();
-
     console.log("Kafka Consumer Connected");
   }
 
@@ -39,7 +35,6 @@ export class KafkaConsumerManager {
 
   private async handleMessage(payload: EachMessagePayload) {
     const { topic } = payload;
-
     try {
       await kafkaConsumerRegistry.execute(topic, payload);
     } catch (error) {
