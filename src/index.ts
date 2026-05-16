@@ -1,4 +1,3 @@
-// Your current index.ts
 import app from "./app";
 import {
   KAFKA_REPLY_TOPICS_ARRAY,

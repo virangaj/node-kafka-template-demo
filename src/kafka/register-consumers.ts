@@ -3,7 +3,7 @@ import { kafkaConsumerRegistry } from "./registry/kafka-consumer.registry";
 
 /**
  * Register every consumer class here.
- * The registry will scan each instance for @KafkaConsumer / @KafkaReplyConsumer
+ * The registry will scan each instance for @KafkaConsumer
  * decorated methods and wire them up automatically.
  */
 export function registerKafkaConsumers(): void {

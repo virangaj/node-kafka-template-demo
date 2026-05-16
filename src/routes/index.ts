@@ -5,14 +5,15 @@ import {
 } from "../kafka/kafka.constants";
 import { kafkaProducer } from "../kafka/kafka.producer";
 
-interface UpdateUserInput {
+export interface UpdateUserInput {
   id: number;
   name: string;
 }
 
-interface UpdateUserOutput {
+export interface UpdateUserOutput {
   success: boolean;
   updatedAt: string;
+  data: UpdateUserInput;
 }
 
 const router = Router();
@@ -46,6 +47,38 @@ router.post("/request", async (_, res) => {
     success: true,
     data: result,
   });
+});
+
+router.post("/bulk-request", async (_, res) => {
+  try {
+    const requests = Array.from({ length: 10 }).map((_, index) =>
+      kafkaProducer.request<UpdateUserInput, UpdateUserOutput>(
+        KAFKA_REQUEST_TOPICS.USER_UPDATE_REQUEST,
+        KAFKA_REPLY_TOPICS.USER_UPDATE_REPLY,
+        {
+          id: index + 1,
+          name: `Alice-${index + 1}`,
+        },
+      ),
+    );
+
+    const results = await Promise.all(requests);
+
+    console.log("Got replies:", results);
+
+    res.json({
+      success: true,
+      count: results.length,
+      data: results,
+    });
+  } catch (error) {
+    console.error("Kafka batch request failed:", error);
+
+    res.status(500).json({
+      success: false,
+      message: "Batch request failed",
+    });
+  }
 });
 
 export default router;

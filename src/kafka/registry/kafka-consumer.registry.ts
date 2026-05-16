@@ -17,8 +17,7 @@ class KafkaConsumerRegistry {
   private handlers = new Map<string, RegisteredHandler>();
 
   /**
-   * Scans a class instance for methods decorated with @KafkaConsumer or
-   * @KafkaReplyConsumer and registers them.
+   * Scans a class instance for methods decorated with @KafkaConsumer registers them.
    */
   register(instance: object): void {
     const proto = Object.getPrototypeOf(instance);
@@ -57,7 +56,7 @@ class KafkaConsumerRegistry {
     const correlationId = headers["correlationId"]?.toString();
     const entry = this.handlers.get(topic);
 
-    // ── Reply path ──────────────────────────────────────────────────────────
+    // ── Reply path 
     // No registered handler + has correlationId = this is a reply message
     if (!entry) {
       if (correlationId) {
@@ -79,7 +78,7 @@ class KafkaConsumerRegistry {
       return;
     }
 
-    // ── Request path ─────────────────────────────────────────────────────────
+    // ── Request path
     const replyTopic = headers["replyTopic"]?.toString();
 
     try {

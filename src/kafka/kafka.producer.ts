@@ -39,7 +39,7 @@ export class KafkaProducer {
     requestTopic: string,
     replyTopic: string,
     payload: TRequest,
-    timeoutMs = 10_000,
+    timeoutMs = 60000,
     key?: string,
   ): Promise<TResponse> {
     // Auto-subscribe to the reply topic the first time it's seen
