@@ -3,8 +3,8 @@ import {
   KAFKA_CONSUMER_TOPIC,
   KAFKA_REPLY_HANDLER,
 } from "../decorators/kafka-consumer.decorator";
-import { kafkaRequestReply } from "../kafka.request-reply";
 import { KafkaReplyEnvelope } from "../kafka.types";
+import { kafkaProducer } from "../kafka.producer";
 
 type HandlerFn = (payload: EachMessagePayload) => Promise<unknown>;
 
@@ -53,54 +53,46 @@ class KafkaConsumerRegistry {
    *   send the result back automatically.
    */
   async execute(topic: string, payload: EachMessagePayload): Promise<void> {
+    const headers = payload.message.headers ?? {};
+    const correlationId = headers["correlationId"]?.toString();
     const entry = this.handlers.get(topic);
 
-    if (!entry) {
-      console.warn(`[KafkaRegistry] No handler registered for topic: ${topic}`);
-      return;
-    }
-
-    const { fn, isReplyHandler } = entry;
-    const headers = payload.message.headers ?? {};
-
     // ── Reply path ──────────────────────────────────────────────────────────
-    if (isReplyHandler) {
-      const correlationId = headers["correlationId"]?.toString();
-      if (!correlationId) {
-        console.warn(
-          `[KafkaRegistry] Reply on ${topic} is missing correlationId header`,
-        );
-        return;
-      }
+    // No registered handler + has correlationId = this is a reply message
+    if (!entry) {
+      if (correlationId) {
+        const raw = payload.message.value?.toString();
+        if (!raw) return;
 
-      const raw = payload.message.value?.toString();
-      if (!raw) return;
+        const envelope = JSON.parse(raw) as KafkaReplyEnvelope;
 
-      const envelope = JSON.parse(raw) as KafkaReplyEnvelope;
-
-      if (envelope.error) {
-        kafkaRequestReply.rejectReply(correlationId, new Error(envelope.error));
+        if (envelope.error) {
+          kafkaProducer.rejectReply(correlationId, new Error(envelope.error));
+        } else {
+          kafkaProducer.resolveReply(correlationId, envelope.data);
+        }
       } else {
-        kafkaRequestReply.resolveReply(correlationId, envelope.data);
+        console.warn(
+          `[KafkaRegistry] No handler registered for topic: ${topic}`,
+        );
       }
       return;
     }
 
     // ── Request path ─────────────────────────────────────────────────────────
     const replyTopic = headers["replyTopic"]?.toString();
-    const correlationId = headers["correlationId"]?.toString();
 
     try {
-      const result = await fn(payload);
+      const result = await entry.fn(payload);
 
-      // Auto-reply when the sender attached routing headers
       if (replyTopic && correlationId) {
-        const { kafkaProducer } = await import("../kafka.producer");
         await kafkaProducer.sendRaw({
           topic: replyTopic,
           messages: [
             {
-              value: JSON.stringify({ data: result } satisfies KafkaReplyEnvelope),
+              value: JSON.stringify({
+                data: result,
+              } satisfies KafkaReplyEnvelope),
               headers: { correlationId },
             },
           ],
@@ -109,9 +101,7 @@ class KafkaConsumerRegistry {
     } catch (error) {
       console.error(`[KafkaRegistry] Handler error on topic ${topic}:`, error);
 
-      // Propagate the error back to the caller if we have routing info
       if (replyTopic && correlationId) {
-        const { kafkaProducer } = await import("../kafka.producer");
         await kafkaProducer.sendRaw({
           topic: replyTopic,
           messages: [

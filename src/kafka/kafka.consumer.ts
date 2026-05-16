@@ -25,6 +25,17 @@ export class KafkaConsumerManager {
     });
   }
 
+  async subscribeReplyTopic(topic: string) {
+    console.log(
+      `[KafkaConsumerManager] Auto-subscribing to reply topic: ${topic}`,
+    );
+
+    // KafkaJS does not support subscribing after run() without a restart
+    await this.consumer.stop();
+    await this.consumer.subscribe({ topic, fromBeginning: false });
+    await this.run(); // re-run picks up the new topic
+  }
+
   async run() {
     await this.consumer.run({
       eachMessage: async (payload) => {

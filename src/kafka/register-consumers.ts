@@ -1,6 +1,5 @@
-import { kafkaConsumerRegistry } from "./registry/kafka-consumer.registry";
 import { UserUpdateConsumer } from "../consumers/user-update.consumer";
-import { UserUpdateReplyConsumer } from "../consumers/user-update-reply.consumer";
+import { kafkaConsumerRegistry } from "./registry/kafka-consumer.registry";
 
 /**
  * Register every consumer class here.
@@ -9,6 +8,5 @@ import { UserUpdateReplyConsumer } from "../consumers/user-update-reply.consumer
  */
 export function registerKafkaConsumers(): void {
   kafkaConsumerRegistry.register(new UserUpdateConsumer());
-  kafkaConsumerRegistry.register(new UserUpdateReplyConsumer());
   // add more consumers here as your app grows…
 }

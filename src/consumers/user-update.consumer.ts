@@ -19,7 +19,7 @@ export class UserUpdateConsumer {
     const { data } = JSON.parse(raw);
     if (!data) throw new Error("data field is missing in message envelope");
 
-    console.log("[UserUpdateConsumer] Processing USER_UPDATE_REQUEST:", data);
+    console.log(`[UserUpdateConsumer] Processing ${KAFKA_REQUEST_TOPICS.USER_UPDATE_REQUEST}:`, data);
 
     // … your business logic here …
 
